@@ -1,5 +1,6 @@
 use clap::{App, Arg};
 use csv::StringRecord;
+use dialoguer::Select;
 use std::collections::HashMap;
 use std::error::Error;
 use std::fs::File;
@@ -64,19 +65,8 @@ fn process_csv(
     let mut reader = csv::Reader::from_reader(csv_reader);
     let mut writer = csv::Writer::from_writer(csv_writer);
     let mut map: HashMap<String, csv::StringRecord> = HashMap::new();
-    let url_pos: usize;
-    let name_pos: usize;
-    let password_pos: usize;
-    let username_pos: usize;
-
-    {
-        let headers = reader.headers()?;
-
-        url_pos = headers.column_of("url");
-        name_pos = headers.column_of("name");
-        password_pos = headers.column_of("password");
-        username_pos = headers.column_of("username");
-    }
+    let headers = reader.headers()?.clone();
+    let name_pos = headers.column_of("name");
 
     for result in reader.records() {
         let record = result?;
@@ -84,28 +74,64 @@ fn process_csv(
         if let Some(name) = record.get(name_pos) {
             if let Some(other_record) = map.get(name) {
                 // Record is a duplicate, check in what way
-                let line = record.position().map_or(1, |pos| pos.line() + 1);
-                let other_line = other_record.position().map_or(1, |pos| pos.line() + 1);
+                let line = record.position().map_or(1, |pos| pos.line());
+                let other_line = other_record.position().map_or(1, |pos| pos.line());
+                let mut differences: usize = 0;
+                let mut new_record: Vec<String> = vec![];
 
-                // Is other important stuff is the same?
-                if other_record.get(username_pos) == record.get(username_pos)
-                    && other_record.get(password_pos) == record.get(password_pos)
-                    && other_record.get(url_pos) == record.get(url_pos)
-                {
-                    // TODO: Write duplicate to stderr
-                    // TODO: Write non-duplicate to stdout
-                    eprintln!("'{}' at line {} matches line {}", name, line, other_line);
+                // Are the other records the same?
+                for (pos, field) in other_record.iter().enumerate() {
+                    if pos == name_pos {
+                        new_record.push(field.to_string());
+                        continue;
+                    }
+
+                    let other_field = record.get(pos).unwrap();
+
+                    if field == other_field {
+                        new_record.push(other_field.to_string());
+                        continue;
+                    }
+
+                    if differences == 0 {
+                        eprintln!(
+                            "'{}' at line {} is different from record at line {}",
+                            name, line, other_line
+                        );
+                    }
+
+                    differences += 1;
+
+                    // Do user interaction to resolve the differences and create a new StringRecord
+                    let selection = Select::new()
+                        .with_prompt(format!("Which '{}'?", headers.get(pos)))
+                        .item(field)
+                        .item(other_field)
+                        .interact()?;
+                    new_record.push(match selection {
+                        0 => field.to_string(),
+                        1 => other_field.to_string(),
+                        _ => panic!(),
+                    });
+                }
+
+                if differences > 0 {
+                    map.insert(name.to_string(), StringRecord::from(new_record));
                 } else {
                     eprintln!(
-                        "'{}' at line {} is different from record at line {}",
+                        "'{}' at line {} matches line {}, dropping",
                         name, line, other_line
                     );
                 }
             } else {
-                writer.write_record(record.iter())?;
                 map.insert(name.to_string(), record);
             }
         }
     }
+
+    for (_, value) in map.iter() {
+        writer.write_record(value)?;
+    }
+
     Ok(())
 }
