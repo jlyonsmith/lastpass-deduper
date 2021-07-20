@@ -147,6 +147,7 @@ name = "lastpass-deduper"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "console",
  "csv",
  "dialoguer",
 ]
