@@ -24,13 +24,14 @@ fn run() -> Result<(), Box<dyn Error>> {
         .author("John Lyon-Smith")
         .about("Display duplicate entries from exported LastPass CSV")
         .arg(
-            Arg::with_name("CSV_FILE")
+            Arg::with_name("input_file")
                 .help("Unprocessed LastPass CSV file")
                 .required(true)
+                .value_name("CSV_FILE")
                 .index(1),
         )
         .arg(
-            Arg::with_name("output")
+            Arg::with_name("output_file")
                 .help("Processed CSV file in LastPass format")
                 .long("output")
                 .short("o")
@@ -43,16 +44,14 @@ fn run() -> Result<(), Box<dyn Error>> {
     // Force colors even if stdout is redirected
     set_colors_enabled(true);
 
-    // Read values and process
-    let mut csv_reader = File::open(Path::new(matches.value_of("CSV_FILE").unwrap()))?;
-    let map = process_csv(&mut csv_reader)?;
-
-    // Write all values out to stdout or new file
-    let csv_writer: Box<dyn Write> = match matches.value_of("output") {
+    let mut csv_reader = File::open(Path::new(matches.value_of("input_file").unwrap()))?;
+    // Open the output file before we process so we don't hit problems after doing the de-dupe
+    let csv_writer: Box<dyn Write> = match matches.value_of("output_file") {
         Some(f) => Box::new(File::create(Path::new(f))?),
         None => Box::new(std::io::stdout()),
     };
     let mut writer = csv::Writer::from_writer(csv_writer);
+    let map = process_csv(&mut csv_reader)?;
 
     for (_, value) in map.iter() {
         writer.write_record(value)?;
